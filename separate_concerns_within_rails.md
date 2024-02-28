@@ -170,8 +170,8 @@ module Collectable
       klass.extend( Object.const_get collector )
   end
 
-  def query_for( method, context )
-    self.send( "query_for_#{method.to_s}", context.fetch( :with, {} ) )
+  def query_for( method, with: {} )
+    self.send( "query_for_#{method.to_s}", with )
   end
 end
 
@@ -182,7 +182,7 @@ end
 # is designed to contains all needed methods to be accessed inside views.
 # This way, Model class file stay out of presenting stuff.
 # A syntactic sugar is supplied. Inside presenters, calling :
-# presenting :my_method { method core }
+# presenting :my_method { |args| method core }
 # is equivalent to
 # def my_method; method core; end
 
@@ -258,7 +258,7 @@ module StaysPresenter # all these submodules are auto-included
     # interesting presentation of stay abstract
   end
 
-  presenting :full_abstract
+  presenting :full_abstract do |args|
     # wonderful method to present a full stay abstract for edit view
   end
 end
