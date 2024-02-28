@@ -23,6 +23,12 @@ pacman -S postgresql
 > IgnorePkg = postgresql
 > IgnorePkg = postgresql-libs
 > ```
+> Cela n'empêche pas qu'une mise à jour d'une dépendance casse l'accès à la 
+> base de donnée. Notamment `icu` !
+> Dans ce cas, il faut recompiler `postgresql` à partir des sources. J'ai des 
+> notes à ce sujet dans le fichier 
+> `/home/mazu/Documents/OnCloud/Linux/manual-package-built.pdf`
+
 > -----------------
 
 Configurer la base de données : l'utilisateur créé doit avoir les droits 
@@ -37,6 +43,13 @@ exit
 
 back to bash shell for mazu
 
+Now launch postgresql service (this will execute the right `postgres -D 
+/var/lib/postgresql/data` command)
+```
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+```
+
 <div style="page-break-after: always"></div>
 
  ### New rails app
@@ -48,8 +61,6 @@ bin/setup # really ?
 
 to install dependencies and create database (Have a look in 
 `config/database.yml` : database name is `my_app_database` by default).
-
-Add `username: db-user-name` (as was created above) for development and test..
 
  ### Installer un gem
 `gem install blabla` installe le gem 'blabla' dans le répertoire adéquat 
