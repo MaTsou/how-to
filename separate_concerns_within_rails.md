@@ -117,7 +117,7 @@ Here typical controller methods calling a processor and/or a presenter.
 ```ruby
 def create
   @stay = Stay.new( permitted_params )
-  unless @stay.proceed_to_create # this is call to processor
+  unless @stay.proceed_to :create # this is call to processor
     render :new, status: :see_other and return
   end
   flash[:notice] = 'Successfully created!'
@@ -141,7 +141,6 @@ could be a Struct. which could be questionned : `context.current_user`,
 ### Auto-extension/inclusion of my modules
 ```
 # app/lib/processable.rb
-# Dedicated to extends ApplicationRecord class.
 # This module auto-magically extends/includes models (AR subclasses) with 
 # processor submodules named ModelsProcessor::ClassMethods and/or 
 # ModelsProcessor::InstanceMethods if exist. This processor is designed to 
@@ -153,11 +152,18 @@ module Processable
     { extend: "ClassMethods", include: "InstanceMethods" }
       .select { |m, sub| Object.const_defined?( "#{mod}::#{sub}" ) }
       .each { |m, sub| klass.send( m, Object.const_get( "#{mod}::#{sub}" ) ) }
+
+    define_method :proceed_to do |method, with: {}| # for instances !
+      self.send( "proceed_to_#{method.to_s}", with )
+    end
+  end
+
+  def proceed_to( method, with: {} ) # for class
+    self.send( "proceed_to_#{method.to_s}", with )
   end
 end
 
 # app/lib/collectable.rb
-# Dedicated to extends ApplicationRecord class.
 # This module auto-magically extends models (AR subclasses) with a collector 
 # module named ModelsCollector if it exists. This collector is designed to 
 # contains all heavy queries to be done by the model.
@@ -176,16 +182,11 @@ module Collectable
 end
 
 # app/lib/presentable.rb
-# Dedicated to extends ApplicationRecord class.
 # This module auto-magically includes a presenter module (named 
 # ModelsPresenter) inside models (AR subclasses) if it exists. This presenter 
 # is designed to contains all needed methods to be accessed inside views.
 # This way, Model class file stay out of presenting stuff.
-# A syntactic sugar is supplied. Inside presenters, calling :
-# presenting :my_method { |args| method core }
-# is equivalent to
-# def my_method; method core; end
-
+# A syntactic sugar is supplied : presenting :my_method { |args| method core }
 module Presentable
   def inherited( klass )
     super
@@ -212,14 +213,14 @@ methods is `proceed_to_xxx`. Example : `@stay.proceed_to_update` or
 # app/processors/stays_processor.rb
 module StaysProcessor
   module ClassMethods
-    def proceed_to_create( params )
-      new( params ).save
+    def proceed_to_create( context = {} )
+      new( context[:params] ).save
     end
   end
 
   module InstanceMethods
-  def proceed_to_update( params )
-    update( params )
+  def proceed_to_update( context = {} )
+    update( context[:params] )
   end
 end
 ```
