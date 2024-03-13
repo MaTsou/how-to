@@ -63,69 +63,64 @@ validating -- and reading (performing requests) from database.
 
 ### Who have to make a given action
 Delegate, delegate, delegate rule applied to controller, tells us that 
-it shouldn't have to build model instances. But, this override Rails 
-conventions; Overridding these conventions, may here, pull the app too far from 
-any rails common developper. So collaboration would be hard !
+it should only distribute the work to be done upon the right workers.
 
-So controller have to send messages to ActiveRecord instances, but it doesn't 
-manage what have to be done. This is not its job.
+So controller have to send messages, but it doesn't manage how things have to be 
+done. This is not its job.
 
-I think I can divide the workflow in three tasks.
+I think I can divide the workflow in a few tasks.
 + Processing POST, PATCH or DELETE actions,
 + Querying model to get needed informations,
-+ Presenting these informations for view usage.
++ Presenting these informations for view usage,
++ Handling actions that have nothing to do with database or views (services)
 
 <div style="page-break-before: always;"></div>
 
 #### My solution
-After a lot of tries, I finally decided that my good way of doing things is to 
-extend models with three modules to provide those three skills :
-+ A processor to proceed to actions. Name convention : StaysProcessor
-+ A collector to collect records from model. Name convention : StaysCollector
-+ A presenter to present records inside views. Name convention : StaysPresenter
+After a lot of tries, I finally decided that my good way of doing things is :
++ to provide Collector classes to performs complex queries. Hence, model only 
+  contains validations and basic scoping methods.
++ to provide Presenter modules as interfaces between query results and views. 
+  As mixins, they decorate the object returned by the query (which is 
+  eventually not a model instance or list...)
++ to provide Processor classes to perform complex database mutations.
 
-I want these extensions to be done dynamically. So I defined three modules, 
-called Processable, Collectable and Presentable which extends 
-ApplicationRecord. Using `inherited` class method, I can auto-magically extend 
-subclasses (models) with appropriate modules.
+Conventional names :
+`InputsCollector`, `InputsProcessor`.
+Concerning presenters, beside eventual `InputsPresenter` we could find 
+`IndexPresenter` and so on.
 
 #### Final tree and ApplicationRecord extension
 ```
 app
 ├── collectors
-│   └── stays_collector.rb
+│   └── inputs_collector.rb
 ├── lib
-│   ├── collectable.rb
-│   ├── presentable.rb
-│   └── processable.rb
+│   ├── collector.rb
+│   ├── presenting.rb
+│   └── processor.rb
 ├── presenters
-│   └── stays_presenter.rb
+│   ├── index_presenter.rb
+│   └── inputs_presenter.rb
 ├── processors
-│   └── stays_processor.rb
-```
-
-```
-# app/model/application_record.rb
-class ApplicationRecord < ActiveRecord::Base
-  primary_abstract_class
-  extend Processable, Collectable, Presentable
-end
+│   └── inputs_processor.rb
 ```
 
 #### Typical controller methods
 Here typical controller methods calling a processor and/or a presenter.
 ```ruby
 def create
-  @stay = Stay.new( permitted_params )
-  unless @stay.proceed_to :create # this is call to processor
+  @stay = Stay.new( permitted_params ).extend( StaysPresenter )
+  unless StaysProcessor.do create: @stay, with: { hash_context } # this is call to processor
     render :new, status: :see_other and return
   end
   flash[:notice] = 'Successfully created!'
 end
 
 def index
-  @stays = Stay.query_for :index, with: { period: current_period }
-  # alternative  Stay.collect_for :index, with ...
+  @inputs = InputsCollector.query_for :index, with: { period: current_period }
+  @inputs.extend IndexPresenter::Iterator
+  # or @inputs.map { |input| input.extend StaysPresenter }
 end
 ```
 
@@ -138,141 +133,130 @@ could be a Struct. which could be questionned : `context.current_user`,
 
 <div style="page-break-before: always;"></div>
 
-### Auto-extension/inclusion of my modules
+### Base modules and classes
 ```
-# app/lib/processable.rb
-# This module auto-magically extends/includes models (AR subclasses) with 
-# processor submodules named ModelsProcessor::ClassMethods and/or 
-# ModelsProcessor::InstanceMethods if exist. This processor is designed to 
-# manage all the heavy work to be done with POST, PATCH or DELETE html queries.
-module Processable
-  def inherited( klass )
-    super
-    mod = "#{klass.name.pluralize}Processor"
-    { extend: "ClassMethods", include: "InstanceMethods" }
-      .select { |m, sub| Object.const_defined?( "#{mod}::#{sub}" ) }
-      .each { |m, sub| klass.send( m, Object.const_get( "#{mod}::#{sub}" ) ) }
-
-    define_method :proceed_to do |method, with: {}| # for instances !
-      self.send( "proceed_to_#{method.to_s}", with )
+# app/lib/presenting.rb
+module Presenting
+  module ClassMethods
+    # Syntactic sugar that provide a way to automatically prefix method names.
+    def presenting( name, &block )
+      define_method "present_#{name.to_s}".to_sym, &block
     end
   end
 
-  def proceed_to( method, with: {} ) # for class
-    self.send( "proceed_to_#{method.to_s}", with )
+  def self.included( presenter )
+    presenter.extend ClassMethods
   end
 end
 
-# app/lib/collectable.rb
-# This module auto-magically extends models (AR subclasses) with a collector 
-# module named ModelsCollector if it exists. This collector is designed to 
-# contains all heavy queries to be done by the model.
-# This way, Model class file have only to deals with basic scopes.
-module Collectable
-  def inherited( klass )
-    super
-    collector = "#{klass.name.pluralize}Collector"
-    Object.const_defined?( collector ) &&
-      klass.extend( Object.const_get collector )
+# app/lib/processor.rb
+# A base class for all processors.
+# Every subclasses are provided a standard syntax :
+# InputsProcessor.do create: @input, with: { budget_id: 1, profile: 2 }
+# or
+# BudgetsProcessor.do :create, with: { user: current_user }
+# Both defining instance variables then calling the right method.
+class Processor
+  class << self
+    def do( method = nil, **args )
+      method ||= args.keys.first
+      model_instance = args.fetch( method, nil )
+      context = args.fetch( :with, nil )
+      self
+        .new( model_instance, context )
+        .send( "do_#{method}" )
+    end
   end
 
-  def query_for( method, with: {} )
-    self.send( "query_for_#{method.to_s}", with )
+  def initialize( input, context )
+    @input = input
+    @context = context
   end
 end
 
-# app/lib/presentable.rb
-# This module auto-magically includes a presenter module (named 
-# ModelsPresenter) inside models (AR subclasses) if it exists. This presenter 
-# is designed to contains all needed methods to be accessed inside views.
-# This way, Model class file stay out of presenting stuff.
-# A syntactic sugar is supplied : presenting :my_method { |args| method core }
-module Presentable
-  def inherited( klass )
-    super
-    presenter = "#{klass.name.pluralize}Presenter"
-    Object.const_defined?( presenter ) &&
-      klass.include( Object.const_get presenter )
+# app/lib/collector.rb
+# A base class for all collectors.
+# Every subclasses are provided a standard syntax :
+# InputsCollector.query_for :create, with: { budget_id: 1, profile: 2 }
+# defining @context variable then calling query_for_create method
+class Collector
+  class << self
+    def query_for( name, with: {} )
+      self
+        .new( with )
+        .send( "query_for_#{name}" )
+    end
   end
 
-  self.class.send( :alias_method, :presenting, :define_method )
+  def initialize( context )
+    @context = context
+  end
 end
 ```
 
 <div style="page-break-before: always;"></div>
 
-### Processor modules
+### Processor classes
 When a controller receive a html request, it sends a message to a model to 
 perform an action. In case of a simple action, default model methods are 
 called. When a more complex action has to be performed, the call is catched by 
-a processor extended/included in the model. The naming convention for processor 
-methods is `proceed_to_xxx`. Example : `@stay.proceed_to_update` or 
-`Stay.proceed_to_create`.
+a processor. The naming convention for processor methods is `do_xxx`.
 
 ```
 # app/processors/stays_processor.rb
-module StaysProcessor
-  module ClassMethods
-    def proceed_to_create( context = {} )
-      new( context[:params] ).save
-    end
-  end
-
-  module InstanceMethods
-  def proceed_to_update( context = {} )
-    update( context[:params] )
+class StaysProcessor < Processor
+  def do_update
+    @input.update( @context[:params] )
   end
 end
 ```
 
-### Collector modules
-These modules are concerned with « collecting » data from models. The naming 
+### Collector classes
+These classes are concerned with « collecting » data from models. The naming 
 convention is `query_for_xxx` where `xxx` is a controller method (and a view 
 name).
 ```
 # app/collectors/stays_collector.rb
-module StaysCollector
-  def query_for_index( context = {} ) # define a method for any basic op.
-    context[:rental_place].stays.where( "actual_period && ?", context[:period] )
+class StaysCollector < Collector
+
+  def query_for_index
+    @context[:rental_place].stays.where( "actual_period && ?", @context[:period] )
   end
 
-  def query_for_show( context = {} ) # define a method for any basic op.
-    context[:rental_place].stays.findbyid( context.fetch( :id, false ) )
-  end
-
-  private
-  def findbyid( id )
-    raise "No id provided !" unless id
-    find_by_id( id )
+  def query_for_show
+    @context[:rental_place].stays.findbyid( @context.fetch( :id, false ) )
   end
 end
 ```
 I think this is a good place to provide defaults value for new records. It 
 could also be achieved inside presenters, but this is not a presentation stuff.
-<div style="page-break-before: always;"></div>
 
 ### Presenter modules
 ```
-# app/presenters/stays_presenter.rb
-module StaysPresenter # all these submodules are auto-included
-  presenting :abstract do # see syntactic sugar above...
-    # interesting presentation of stay abstract
+# app/presenters/index_presenter.rb
+module IndexPresenter
+  include Presenting
+  module Iterator
+    def each_bay
+      self.each do |input|
+        input.extend IndexPresenter::Single
+        ...
+      end
+    end
   end
 
-  presenting :full_abstract do |args|
-    # wonderful method to present a full stay abstract for edit view
+  module Single
+    include Presenting
+    presenting :my_specific_title do
+      ...
+    end
   end
 end
 ```
-Great separation of concerns, controller is presenter agnostic since it calls a 
-method on the model. From within the views, we can call these new methods : 
-`<%= @stay.abstract %>`. Hence, the helpers only « shape » the contents.
 
+<div style="page-break-before: always;"></div>
 ### Controllers
-In rails, we generally permit parameters within the controller. But I think 
-this is curious, since its a model stuff.
-
-##### A way to extract parameter permissions from controllers :
+##### A way to handle parameter permissions from controllers :
 ```
 # app/controllers/application_controller.rb
 class ApplicationController < ActionController::Base
