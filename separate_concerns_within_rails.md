@@ -72,23 +72,100 @@ I think I can divide the workflow in a few tasks.
 + Processing POST, PATCH or DELETE actions,
 + Querying model to get needed informations,
 + Presenting these informations for view usage,
-+ Handling actions that have nothing to do with database or views (services)
++ Handling actions that have nothing to do with data persistence or display (services)
 
 <div style="page-break-before: always;"></div>
 
 #### My solution
 After a lot of tries, I finally decided that my good way of doing things is :
++ to provide Processor classes to perform complex database mutations.
 + to provide Collector classes to performs complex queries. Hence, model only 
   contains validations and basic scoping methods.
 + to provide Presenter modules as interfaces between query results and views. 
   As mixins, they decorate the object returned by the query (which is 
   eventually not a model instance or list...)
-+ to provide Processor classes to perform complex database mutations.
 
 Conventional names :
 `InputsCollector`, `InputsProcessor`.
 Concerning presenters, beside eventual `InputsPresenter` we could find 
 `IndexPresenter` and so on.
+
+<h4>Separation of concerns :</h4>
+<div style="display: flex; justify-content: space-between;">
+
+<div style="border: 1px solid grey; text-orientation: upright; writing-mode: 
+vertical-lr; text-align: center;">
+MODEL
+</div>
+
+<div style="display: flex; flex-direction: column; justify-content: 
+space-evenly; background-color: #dddddd;">
+<p style="margin: auto;"><========</p>
+<p style="margin: auto; padding-inline: 1ex;">Model interface</p>
+<p style="margin: auto;">========></p>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 1ex;">
+<div style="border: 1px solid grey; text-orientation: upright; writing-mode: 
+vertical-lr; text-align: center; flex-grow: 1;">
+PROCESSOR
+</div>
+<div style="border: 1px solid grey; text-orientation: upright; writing-mode: 
+vertical-lr; text-align: center; flex-grow: 1;">
+COLLECTOR
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; justify-content: 
+space-evenly;">
+<p style="margin: auto;"><===</p>
+<p style="margin: auto;">&nbsp;</p>
+<p style="margin: auto;">===></p>
+</div>
+
+<div style="border: 1px solid grey; text-orientation: upright; writing-mode: 
+vertical-lr; text-align: center;">
+CONTROLLER
+</div>
+
+<div style="display: flex; flex-direction: column; justify-content: 
+space-evenly;">
+<p style="margin: auto;"><===</p>
+<p style="margin: auto;">&nbsp;</p>
+<p style="margin: auto;">===></p>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 1ex;">
+<div style="border: 1px solid grey; text-orientation: upright; writing-mode: 
+vertical-lr; text-align: center; flex-grow: 1;">
+ROUTER
+</div>
+<div style="border: 1px solid grey; text-orientation: upright; writing-mode: 
+vertical-lr; text-align: center; flex-grow: 1;">
+PRESENTER
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; justify-content: 
+space-evenly; background-color: #dddddd;">
+<p style="margin: auto;"><========</p>
+<p style="margin: auto; padding-inline: 1.5ex;">View interface</p>
+<p style="margin: auto;">========></p>
+</div>
+
+<div style="border: 1px solid grey; text-orientation: upright; writing-mode: 
+vertical-lr; text-align: center;">
+VIEW
+</div>
+</div>
+
+<div style="display: flex; justify-content: space-around;">
+<div style="display: flex; flex-direction: column; align-content: center; gap: 1ex; padding: 1ex;">
+<div style="writing-mode: vertical-lr; text-orientation: sideways; align-self: center;">=======></div>
+<div style="border: 1px solid grey; padding-inline: 1ex; margin-bottom: 2em;">SERVICE</div>
+</div>
+</div>
+
 
 #### Final tree and ApplicationRecord extension
 ```
@@ -106,12 +183,38 @@ app
 │   └── inputs_processor.rb
 ```
 
+<div style="page-break-before: always;"></div>
+
+### Controllers
+#### A way to handle parameter permissions from controllers :
+```
+# app/controllers/application_controller.rb
+class ApplicationController < ActionController::Base
+  def permitted_params
+    model = self.controller_name.singularize
+    params.require( model.to_sym ).permit(
+      Object.const_get( model.camelize ).permitted_params
+    )
+  end
+end
+
+# app/models/stay.rb
+class Stay < ApplicationRecord
+  def self.permitted_params
+    [ :title, :name, :whatever ]
+  end
+end
+```
+No more need for a `stay_params` method... You may define a `permitted_params` 
+method to override this default behaviour.
+
 #### Typical controller methods
 Here typical controller methods calling a processor and/or a presenter.
 ```ruby
 def create
   @stay = Stay.new( permitted_params ).extend( StaysPresenter )
-  unless StaysProcessor.do create: @stay, with: { hash_context } # this is call to processor
+
+  unless StaysProcessor.do create: @stay, with: { hash_context }
     render :new, status: :see_other and return
   end
   flash[:notice] = 'Successfully created!'
@@ -119,6 +222,7 @@ end
 
 def index
   @inputs = InputsCollector.query_for :index, with: { period: current_period }
+
   @inputs.extend IndexPresenter::Iterator
   # or @inputs.map { |input| input.extend StaysPresenter }
 end
@@ -126,29 +230,21 @@ end
 
 #### Another object ?
 In big apps it could be interesting that controller build a « context » 
-object to be given as parameter to processor and presenter. This context has to 
+object to be given as parameter to processor and collector. This context has to 
 contain all the contextual stuff (like session hash, etc.). Context object 
 could be a Struct. which could be questionned : `context.current_user`, 
-`context.stay_id`, `context.stay`, etc. 
+`context.stay_id`, `context.stay`, etc.
+
+Then a typical call will be :
+```
+StaysProcessor.do create: @input, with: context
+```
+with context being a controller callback..
 
 <div style="page-break-before: always;"></div>
 
 ### Base modules and classes
 ```
-# app/lib/presenting.rb
-module Presenting
-  module ClassMethods
-    # Syntactic sugar that provide a way to automatically prefix method names.
-    def presenting( name, &block )
-      define_method "present_#{name.to_s}".to_sym, &block
-    end
-  end
-
-  def self.included( presenter )
-    presenter.extend ClassMethods
-  end
-end
-
 # app/lib/processor.rb
 # A base class for all processors.
 # Every subclasses are provided a standard syntax :
@@ -168,8 +264,8 @@ class Processor
     end
   end
 
-  def initialize( input, context )
-    @input = input
+  def initialize( target, context )
+    @target = target
     @context = context
   end
 end
@@ -192,21 +288,34 @@ class Collector
     @context = context
   end
 end
+
+# app/lib/presenting.rb
+module Presenting
+  module ClassMethods
+    # Syntactic sugar that provide a way to automatically prefix method names.
+    def presenting( name, &block )
+      define_method "present_#{name.to_s}".to_sym, &block
+    end
+  end
+
+  def self.included( presenter )
+    presenter.extend ClassMethods
+  end
+end
 ```
 
 <div style="page-break-before: always;"></div>
 
 ### Processor classes
-When a controller receive a html request, it sends a message to a model to 
-perform an action. In case of a simple action, default model methods are 
-called. When a more complex action has to be performed, the call is catched by 
-a processor. The naming convention for processor methods is `do_xxx`.
+These classes are concerned with « processing » model persistence action.
+The naming convention for processor methods is `do_xxx`. Processor parent class 
+provide a @target and a @context instance variables.
 
 ```
 # app/processors/stays_processor.rb
 class StaysProcessor < Processor
   def do_update
-    @input.update( @context[:params] )
+    @target.update( @context[:params] )
   end
 end
 ```
@@ -214,7 +323,7 @@ end
 ### Collector classes
 These classes are concerned with « collecting » data from models. The naming 
 convention is `query_for_xxx` where `xxx` is a controller method (and a view 
-name).
+name). A @context instance variable is provided by Collector parent class.
 ```
 # app/collectors/stays_collector.rb
 class StaysCollector < Collector
@@ -240,7 +349,7 @@ module IndexPresenter
     def each_bay
       self.each do |input|
         input.extend IndexPresenter::Single
-        ...
+        yield input
       end
     end
   end
@@ -254,32 +363,3 @@ module IndexPresenter
 end
 ```
 
-<div style="page-break-before: always;"></div>
-### Controllers
-##### A way to handle parameter permissions from controllers :
-```
-# app/controllers/application_controller.rb
-class ApplicationController < ActionController::Base
-  def permitted_params
-    model = self.controller_name.singularize
-    params.require( model.to_sym ).permit(
-      Object.const_get( model.camelize ).permitted_params
-    )
-  end
-end
-
-# app/models/stay.rb
-class Stay < ApplicationRecord
-  def self.permitted_params
-    [ :title, :name, :whatever ]
-  end
-end
-
-# app/controllers/stays_controller.rb
-def create # or anything else.
-  @stay = Stay.new( permitted_params )
-  # more stuff
-end
-```
-No more need for a `stay_params` method... You may define a `permitted_params` 
-method to override this default behaviour.
