@@ -81,12 +81,12 @@ After a lot of tries, I finally decided that my good way of doing things is :
 + to provide Processor classes to perform complex database mutations.
 + to provide Collector classes to performs complex queries. Hence, model only 
   contains validations and basic scoping methods.
-+ to provide Presenter modules as interfaces between query results and views. 
-  As mixins, they decorate the object returned by the query (which is 
-  eventually not a model instance or list...)
++ to provide Decorator classes to add dedicated Presenter mixins modules as 
+  interfaces between query results (which are eventually not model instances 
+  or list...) and views.
 
 Conventional names :
-`InputsCollector`, `InputsProcessor`.
+`InputsCollector`, `InputsProcessor`, `InputsDecorator`.
 Concerning presenters, beside eventual `InputsPresenter` we could find 
 `IndexPresenter` and so on.
 
@@ -107,12 +107,18 @@ space-evenly; background-color: #dddddd;">
 
 <div style="display: flex; flex-direction: column; gap: 1ex;">
 <div style="border: 1px solid grey; text-orientation: upright; writing-mode: 
-vertical-lr; text-align: center; flex-grow: 1;">
+vertical-lr; text-align: center; align-self: center; flex-grow: 1;">
 PROCESSOR
 </div>
+<div style="display: flex; gap: 1ex;">
 <div style="border: 1px solid grey; text-orientation: upright; writing-mode: 
 vertical-lr; text-align: center; flex-grow: 1;">
 COLLECTOR
+</div>
+<div style="border: 1px solid grey; text-orientation: upright; writing-mode: 
+vertical-lr; text-align: center; flex-grow: 1;">
+DECORATOR
+</div>
 </div>
 </div>
 
@@ -159,30 +165,38 @@ VIEW
 </div>
 </div>
 
-<div style="display: flex; justify-content: space-around;">
+<div style="display: flex; justify-content: space-around; transform: 
+translateX( 18px );">
 <div style="display: flex; flex-direction: column; align-content: center; gap: 1ex; padding: 1ex;">
 <div style="writing-mode: vertical-lr; text-orientation: sideways; align-self: center;">=======></div>
 <div style="border: 1px solid grey; padding-inline: 1ex; margin-bottom: 2em;">SERVICE</div>
 </div>
 </div>
 
-
 #### Final tree and ApplicationRecord extension
 ```
 app
 ├── collectors
+│   ├── entries_collector.rb
 │   └── inputs_collector.rb
+├── decorators
+│   ├── entries_decorator.rb
+│   └── inputs_decorator.rb
 ├── lib
-│   ├── collector.rb
+│   ├── collectable.rb
+│   ├── decorable.rb
 │   ├── presenting.rb
-│   └── processor.rb
+│   ├── processable.rb
 ├── presenters
-│   ├── index_presenter.rb
+│   ├── balance_presenter.rb
+│   ├── budgets_presenter.rb
+│   ├── entries_presenter.rb
+│   ├── home_presenter.rb
 │   └── inputs_presenter.rb
 ├── processors
+│   ├── budgets_processor.rb
 │   └── inputs_processor.rb
 ```
-
 <div style="page-break-before: always;"></div>
 
 ### Controllers
@@ -209,22 +223,19 @@ No more need for a `stay_params` method... You may define a `permitted_params`
 method to override this default behaviour.
 
 #### Typical controller methods
-Here typical controller methods calling a processor and/or a presenter.
+Here typical controller methods calling a collector and a processor.
 ```ruby
 def create
-  @stay = Stay.new( permitted_params ).extend( StaysPresenter )
+  @stay = Stay.new( permitted_params ).decorate_for :new
 
-  unless StaysProcessor.do create: @stay, with: { hash_context }
+  unless @stay.proceed_to :create, with: { hash_context }
     render :new, status: :see_other and return
   end
   flash[:notice] = 'Successfully created!'
 end
 
 def index
-  @inputs = InputsCollector.query_for :index, with: { period: current_period }
-
-  @inputs.extend IndexPresenter::Iterator
-  # or @inputs.map { |input| input.extend StaysPresenter }
+  @inputs = Input.collect_for :index, with: { period: current_period }
 end
 ```
 
@@ -237,58 +248,168 @@ could be a Struct. which could be questionned : `context.current_user`,
 
 Then a typical call will be :
 ```
-StaysProcessor.do create: @input, with: context
+@stay.proceed_to :create, with: context
 ```
-with context being a controller callback..
+context being a controller private method..
 
 <div style="page-break-before: always;"></div>
 
 ### Base modules and classes
+For all this works, mixins modules inside ApplicationRecord
 ```
-# app/lib/processor.rb
-# A base class for all processors.
-# Every subclasses are provided a standard syntax :
-# InputsProcessor.do create: @input, with: { budget_id: 1, profile: 2 }
-# or
-# BudgetsProcessor.do :create, with: { user: current_user }
-# Both defining instance variables then calling the right method.
-class Processor
-  class << self
-    def do( method = nil, **args )
-      method ||= args.keys.first
-      model_instance = args.fetch( method, nil )
-      context = args.fetch( :with, nil )
-      self
-        .new( model_instance, context )
-        .send( "do_#{method}" )
+class ApplicationRecord < ActiveRecord::Base
+  primary_abstract_class
+  include Processable, Collectable, Decorable
+end
+```
+```
+# app/lib/collectable.rb
+# Dedicated to be included in ApplicationRecord class
+# Provide a way to extract all model querying logic from both
+# controller and model by delegating it to Collector subclasses.
+#
+# Then controller syntax becomes :
+# Model.collect_for :view_name, with: { context_hash }
+# e.g. Input.collect_for :index, with: { budget_id: current_budget_id }
+# The InputsCollector class then needs to implement
+# 'collect_for_index' method which is called. An instance variable @context
+# contains the context_hash passed by controller
+module Collectable
+  def self.included( klass )
+    class << klass
+      def collect_for( view_name, with: {} )
+        collected = Object
+          .const_get( "#{self.name.pluralize}Collector" )
+          .query_for view_name, with: with
+        decorator = Object
+          .const_get( "#{self.name.pluralize}Decorator" )
+          .decorate_for view_name, collected, with: with
+      end
     end
   end
 
-  def initialize( target, context )
-    @target = target
-    @context = context
-  end
-end
+  class Collector
+    class << self
+      def query_for( name, with: {} )
+        self
+          .new( with )
+          .send( "query_for_#{name}" )
+      end
+    end
 
-# app/lib/collector.rb
-# A base class for all collectors.
-# Every subclasses are provided a standard syntax :
-# InputsCollector.query_for :create, with: { budget_id: 1, profile: 2 }
-# defining @context variable then calling query_for_create method
-class Collector
-  class << self
-    def query_for( name, with: {} )
-      self
-        .new( with )
-        .send( "query_for_#{name}" )
+    def initialize( context )
+      @context = context
+    end
+
+  end
+
+end
+```
+
+<div style="page-break-before: always;"></div>
+
+```
+# app/lib/processable.rb
+# Dedicated to be included in ApplicationRecord class
+# Provide a way to extract all model processing logic from both
+# controller and model by delegating it to Processor subclasses.
+#
+# Then controller syntax becomes :
+# Budget.proceed_to :create, with: { user_id: current_user.id }
+# Input.proceed_to update: @input, with: { params: permitted_params }
+# or (equivalent)
+# @input.proceed_to :update, with: { params: permitted_params }
+#
+# The InputsProcessor class then needs to implement
+# 'proceed_to_update' method which is called. Instance variables @target and 
+# @context contain respectively the model instance and the context_hash.
+module Processable
+  def self.included( klass )
+    class << klass
+      def proceed_to( method = nil, **args )
+        Object
+          .const_get( "#{self.name.pluralize}Processor" )
+          .proceed_to method, **args
+      end
     end
   end
 
-  def initialize( context )
-    @context = context
+  # shortcut for instances..
+  def proceed_to( method, **args )
+    Object
+      .const_get( "#{self.class.name.pluralize}Processor" )
+      .proceed_to method.to_sym => self, **args
+  end
+
+  class Processor
+    class << self
+      def proceed_to( method = nil, **args )
+        method ||= args.keys.first
+        model_instance = args.fetch( method, nil )
+        context = args.fetch( :with, nil )
+        self
+          .new( model_instance, context )
+          .send( "proceed_to_#{method}" )
+      end
+
+    end
+
+    def initialize( target, context )
+      @target = target
+      @context = context
+    end
   end
 end
+```
 
+<div style="page-break-before: always;"></div>
+
+```ruby
+# app/lib/decorable.rb
+# Dedicated to be included in ApplicationRecord class
+# Provide a way to extract all model presentation logic from both
+# controller and model by delegating it to Presenter modules.
+#
+# Two ways are provided to decorate a model query result with dedicated 
+# presenters:
+# 1/ A call to Model.collect_for :view_name method automatically implies
+# a subsequent call to 'decorate_for view_name'
+# 2/ A controller call to @input.decorate_for :show, with: {} is also possible 
+# when model query do not require Collector management.
+#
+# The InputsDecorator class then CAN implement
+# 'decorate_for_view_name' method which is called. Instance variables 
+# @collected and @context contain respectively the query result and the 
+# context_hash.
+#
+# Note : if InputsDecorator implement method_missing, it can manage default 
+# decoration functionality.
+module Decorable
+  # a short cut for model instances
+  def decorate_for( view_name, with: {} )
+    Object
+      .const_get( "#{self.class.name.pluralize}Decorator" )
+      .decorate_for view_name, self, with: with
+  end
+
+  class Decorator
+    def self.decorate_for( view_name, collected, with: {} )
+      self
+        .new( collected, with: with )
+        .send( "decorate_for_#{view_name}" )
+    end
+
+    def initialize( collected, with: {} )
+      @collected = collected
+      @context = with
+    end
+
+  end
+
+end
+```
+
+```
 # app/lib/presenting.rb
 module Presenting
   module ClassMethods
@@ -308,13 +429,13 @@ end
 
 ### Processor classes
 These classes are concerned with « processing » model persistence action.
-The naming convention for processor methods is `do_xxx`. Processor parent class 
-provide a @target and a @context instance variables.
+The naming convention for processor methods is `proceed_to_xxx`. Processor 
+parent class provide a @target and a @context instance variables.
 
 ```
 # app/processors/stays_processor.rb
-class StaysProcessor < Processor
-  def do_update
+class StaysProcessor < Processable::Processor
+  def proceed_to_update
     @target.update( @context[:params] )
   end
 end
@@ -326,7 +447,7 @@ convention is `query_for_xxx` where `xxx` is a controller method (and a view
 name). A @context instance variable is provided by Collector parent class.
 ```
 # app/collectors/stays_collector.rb
-class StaysCollector < Collector
+class StaysCollector < Collectable::Collector
 
   def query_for_index
     @context[:rental_place].stays.where( "actual_period && ?", @context[:period] )
@@ -339,6 +460,24 @@ end
 ```
 I think this is a good place to provide defaults value for new records. It 
 could also be achieved inside presenters, but this is not a presentation stuff.
+
+### Decorator classes
+These classes are concerned with « decorating » query results with the 
+dedicated mixins (which are Presenter modules). The naming convention is 
+`decorate_for_xxx` where `xxx` is a view name. @collected and @context instance 
+variables are provided.
+```
+class InputsDecorator < Decorable::Decorator
+  def method_missing( name, *args )
+    # provide a default decoration
+    @collected.extend InputsPresenter
+  end
+
+  def decorate_for_history
+    @collected.map { |input| input.extend InputsPresenter }
+  end
+end
+```
 
 ### Presenter modules
 ```
