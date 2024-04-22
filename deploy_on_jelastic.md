@@ -1,17 +1,33 @@
 ### April 2024 -- Deploy on Jelastic
 
 #### Nouvel environnement
-Pour déployer budgetApp, j'ai choisi un environnement contenant :
+Pour déployer budgetApp, j'ai choisi un environnement nommé `budgetapp-prod-a` 
+contenant :
 + un 'application server' `apache-ruby` (`nginx-ruby` plus cher !) avec une IP 
-  publique (pas d'accès SLB),
-+ un 'noeud sql' `postgre 15.2` avec accès SLB.
+  publique (pas d'accès SLB)
+
+Et un autre (!) environnement nommé `app-data1` contenant :
++ un 'noeud sql' `postgre 15.5` avec accès SLB.
 
 Je n'ai pas modifié les configuration cloudlets par défaut.
-J'ai choisi `budgetapp-prod` comme nom de sorte que l'url du 
-conteneur/environnement soit :
-```
-budgetapp-prod.jcloud-ver-jpe.ik-server.com
-```
+
+Avoir un environnement séparé pour la base de donnée permet :
++ de pouvoir déployer une mise à jour dans un autre environnement que 
+  `budgetapp-prod` (par exemple `budgetapp-prod-b`), avec `budgetapp-prod-b` 
+  pointant sur la même base de donnée. Ainsi le basculement de version peut se 
+  faire sans délai pour les usagers, par exemple en changeant l'IP vers lequel 
+  pointe le gestionnaire DNS. Cela permet un retour en arrière simple en cas de 
+  dysfonctionnement.
++ d'utiliser le même gestionnaire de base de données pour plusieurs 
+  applications. Si jamais mettre tous ces oeufs dans le même panier n'est pas 
+  opportun alors je créerai `app-data2` (and so on; raison de la numérotation 
+  initiée.)
+
+Note : des deux environnements `budgetapp-prod-a` et `budgetapp-prod-b`, 
+stopper celui vers lequel le DNS record pointe. Ainsi, seul l'environnement 
+utile est facturé. Les deux environnements ne devraient être actifs tous les 
+deux qu'en situation de test précédent une mise à jour.. ATTENTION toutefois, 
+bien s'assurer de mettre à jour le bon environnement !
 
 #### Déploiement de l'application
 1. Dans 'Gestionnaire de déploiement', renseigner un nouveau projet avec un 
@@ -30,21 +46,25 @@ budgetapp-prod.jcloud-ver-jpe.ik-server.com
 
 Dès lors, les mises à jour sur github peuvent être déployées, soit manuellement 
 (clic sur la flèche verte...) soit automatiquement (configuration du 
-déploiement). À tester : doit-on systématiquement `bundle install` (je pense 
-que non; le usecase est un gem supplémentaire) ; idem pour `rails 
-assets:precompile`. Ça veut dire qu'une mise à jour prend du temps et qu'il me 
-faut trouver comment l'opérer sans problème pour l'usager..
+déploiement). Je préfère manuellement (à rapprocher du choix fait plus haut de 
+travailler avec 2 environnements).
+
+À tester : doit-on systématiquement `bundle install` (je pense que non; le 
+usecase est un ajout de gem) ; idem pour `rails assets:precompile`. Note : 
+`rails assets:precompile` doit être suivi d'un relancement du serveur.
+
+<div style="page-break-before: always;"></div>
 
 #### Lien avec la base de données
 À la création de l'environnement, on reçoit un mail de confirmation avec les 
 identifiants du gestionnaire de base de données -- qui est accessible en cliquant sur 'open in browser' (pour le noeud bdd) :
 ```
-host: nodexxxxname.jcloud-ver-jpe.ik-server.com
+host: nodexxxx-app-data1.jcloud-ver-jpe.ik-server.com
 id: webadmin
-pwd: PQKmln28921
+pwd: PQKmln28921 (obviously, here is a fake pwd !)
 ```
 
-Mettre à jour `config/database.yml' :
+Mettre à jour `config/database.yml' (si pas déjà fait) :
 ```
 production:
   <<: *default
@@ -52,8 +72,6 @@ production:
   username: webadmin
   password: <%= ENV["BUDGETAPP_DATABASE_PASSWORD"] %>
 ```
-
-<div style="page-break-before: always;"></div>
 
 #### Variables d'environnement
 Dans Application Server, cliquer sur la roue dentée puis 'variables'. À cet 
@@ -92,6 +110,8 @@ J'ai parfois eu besoin de lancer 2 fois `bundle install` (notamment pour le gem
 Idem pour `rails assets:precompile`.
 
 Ensuite, `open in browser` fonctionne..
+
+<div style="page-break-before: always;"></div>
 
 #### Configure the public IP and SSL certificate to access the app.
 Note the public IP (ipv4) and go to infomaniak DNS page.
