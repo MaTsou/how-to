@@ -6,12 +6,12 @@ Both have remote tracking/tracked branches. Only prod is dedicated for
 deployment.
 
 + `prod` which is production version. No commit. No rebase. Only merges from 
-  staging. It is tagged with accurate version number. Tagging allow easy roll 
-  back to previous state.
+  staging or bug-fix-branches. It is tagged with accurate version number. 
+  Tagging allow easy roll back to previous state.
 + `staging` which is the container of the _in progress next version_. No 
-  commit. No rebase. Only merges from working branches.
+  commit. No rebase. Only merges from temporary (see below) branches.
 
-> Vocabulary :
+> Vocabulary for `prod` branch state :
 > + production version : it is a version dedicated for jelastic deployment.
 > + delivered version : it is a production version a DNS record points to.
 
@@ -21,7 +21,9 @@ deployment.
 contribute to next production update.
 1. When `staging` is locally stable, it is merged into `prod`. This has to be 
    tested on deployment environment before being delivered to clients.
-1. The tested prod version can either :
+1. The tested prod version can either : CANNOT DO THIS IF MIGRATION IMPLIED 
+   BECAUSE OF A SHARED DATABASE NODE. HAVE TO CREATE A DEDICATED TEMPORARY 
+   ENVIRONNEMENT TO TEST A COMPATIBILITY BREAK..
     + be stable : hence,
         + it receive a numbered tag following this policy :
         ```
@@ -44,6 +46,8 @@ contribute to next production update.
         + DNS is not updated.
         + new commits are provided to fix issues. (do not forget to commit to 
           staging too, and maybe temporary branches)
+
+<div style="page-break-before: always;"></div>
 
 #### Roll back
 It may happen that bugs or issues appear on a delivered version. Many scenari 
@@ -69,7 +73,7 @@ git checkout prod
 git merge newbugfix # merge to staging and maybe temporary branches too
 git push
 # run WAN testing
-git tag vx.y.z+1
+git tag -a vx.y.z+1 prod
 git push --tags
 # on jelastic web-ssh : git pull --tags
 ```
@@ -84,6 +88,8 @@ Remarks :
   merge (and not rebase ! Remember, none of the remote branches should be 
   rebased) `prod` within `staging`. So, added features are built without the 
   said bug.
+
+<div style="page-break-before: always;"></div>
 
 #### Managing temporary branches
 Temporary branche purposes are :
@@ -109,6 +115,29 @@ _When the team grows, it could be preferable to evolve from one `staging`
 branch to a couple `staging`/`dev` branches, `staging`, shared, staying away 
 from any rebasement._
 
+### Git Cheatsheet
++ ```git checkout -b foo [from]``` creates a branch named foo
+
+  Optional `from` argument is reference to a commit (hash, tag or branch-name).
++ ```git push [-u] origin/branch_name``` publish current branch to remote
+
+  Optional `-u` is a shortcut for --set-upstream : keep a tracking reference 
+  between the two branches to allow future `git push` (or `git pull` to target 
+  the right branch). Think : without tracking, local and remote branches, even 
+  if sharing the same name, are totally independant ! (Hey ! with tracking too 
+  !!!)
++ ```git branch -d name``` delete a local branch
++ ```git push origin --delete name``` delete a remote branch
++ ```git branch -m [old] new``` rename a branch.
+
+  Use optional `old` argument if branch to rename is not checked out. To rename 
+  a remote branch, rename it locally, push this "newly created" branch to 
+  remote and delete remote branch.
++ merging options :
+    + `--no-ff` creates a merge commit even when fast-forward would be 
+      possible.
+    + `--squash` combines all integrated changes into a single commit instead 
+      of preserving them as individual commits.
 <div style="page-break-before: always;"></div>
 
 #### Commits policy
@@ -154,27 +183,3 @@ git commit -m "a partial or erroneous commit"
 git add 'what have to be added'
 git commit --amend # amend previous commit with new changes
 ```
-
-### Git Cheatsheet
-+ ```git checkout -b foo [from]``` creates a branch named foo
-
-  Optional `from` argument is reference to a commit (hash, tag or branch-name).
-+ ```git push [-u] origin/branch_name``` publish current branch to remote
-
-  Optional `-u` is a shortcut for --set-upstream : keep a tracking reference 
-  between the two branches to allow future `git push` (or `git pull` to target 
-  the right branch). Think : without tracking, local and remote branches, even 
-  if sharing the same name, are totally independant ! (Hey ! with tracking too 
-  !!!)
-+ ```git branch -d name``` delete a local branch
-+ ```git push origin --delete name``` delete a remote branch
-+ ```git branch -m [old] new``` rename a branch.
-
-  Use optional `old` argument if branch to rename is not checked out. To rename 
-  a remote branch, rename it locally, push this "newly created" branch to 
-  remote and delete remote branch.
-+ merging options :
-    + `--no-ff` creates a merge commit even when fast-forward would be 
-      possible.
-    + `--squash` combines all integrated changes into a single commit instead 
-      of preserving them as individual commits.
