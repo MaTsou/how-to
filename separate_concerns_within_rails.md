@@ -421,44 +421,44 @@ collected` are aliases.
 
 ##### Component class and subclasses
 ```
-  class Component
-    delegate :render, to: :view_context
-    attr_reader :view_context
+class Component
+  delegate :render, to: :view_context
+  attr_reader :view_context
 
-    def partial_name; nil; end
+  def initialize; end
+  def partial_name; nil; end
 
-    def rendered_object
-       inline_template? ?
-        { inline: erb_template } :
-        { partial: [ partial_folder, partial_name ].join }
-    end
-
-    def render_in( view_context, &block )
-      return unless render?
-      @view_context = view_context
-      render **rendered_object, locals: provided_vars
-    end
-    def render?; true; end
-
-    private
-    def inline_template?; respond_to?( :erb_template ); end
-    def partial_folder; "components/"; end
+  def rendered_object
+     inline_template? ?
+      { inline: erb_template } :
+      { partial: [ partial_folder, partial_name ].join }
   end
+
+  def render_in( view_context, &block )
+    @view_context = view_context # hence view_context known in render? method
+    return unless render?
+    render **rendered_object, locals: provided_vars
+  end
+
+  def render?; true; end
+  def provided_vars; {}; end
+
+  private
+  def inline_template?; respond_to?( :erb_template ); end
+  def partial_folder; "components/"; end
 end
 ```
 ###### A typical Component
 ```
 class Icon < Component
   attr_reader :name, :options
-
   def erb_template
     <<~ERB
-  <%= content_tag icon_tag, '', icon: icon_name, **options %>
+      <%= content_tag icon_tag, '', icon: icon_name, **options %>
     ERB
   end
 
   def initialize( name, **options ); @name, @options = name, options; end
-
   def provided_vars
     { icon_name: "mdi:#{name}", icon_tag: "iconify-icon", options: options }
   end
