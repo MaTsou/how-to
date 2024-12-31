@@ -53,19 +53,20 @@ So here I am to apply all this advices/goals in a rails app.
 #### Controller
 The central component. It is the part interacting with the browser, receiving 
 http requests and responding by a content. Does it have to know about database 
-structure ? No. Doesn't mean it doesn't have to deal with ActiveRecord 
-instances? Only as far as it does not know it...  Does it have to know about 
-how to deal with the sql request ? No. It has to know who has to deal with the 
-actual use case and which message have to be sent to it. Then it has to return 
-the accurate response (depending of use-case return).
+structure ? No. This doesn't mean it does not deal with ActiveRecord instances. 
+It means that it does not know what it deals with...
+Does it has to know about how to deal with the sql request ? No. It has to 
+know who has to deal with the actual use case and which message have to be sent 
+to it. Then it has to return the accurate response (depending of use-case 
+return).
 
 #### View
-Does it have to know about database structure ? No. It has to know about what 
+Does it has to know about database structure ? No. It has to know about what 
 has to be displayed. So it has to receive something that is built from the 
 database to respond to what needs to be displayed.
 
 #### Model (ActiveRecord object)
-Does it have to know about which kind of manipulation data are subject to ? 
+Does it has to know about which kind of manipulation data are subject to ? 
 Yes/No. Probably not ! This is what all this paper is about. It deals with 
 storing to -- and validating or not ! -- and reading (performing requests) from 
 database.
@@ -78,193 +79,92 @@ So controller have to send messages, but it doesn't manage how things have to be
 done. This is not its job.
 
 I think I can divide the workflow in a few tasks.
-+ Processing POST, PATCH or DELETE actions,
++ Performing POST, PATCH or DELETE actions,
 + Collecting needed information from models,
-+ Presenting these informations within views,
++ Exposing these informations within views,
 + Handling actions that have nothing to do with data persistence or display (services)
 
 <div style="page-break-before: always;"></div>
 
 #### My solution
 After a lot of tries, I finally decided that my good way of doing things is :
-+ to provide `Processor` classes to perform database mutations.
-+ to provide `Collector` classes to performs queries. Hence, model only 
-  contains validations and basic scoping methods.
-+ to provide `Presenter` classes to add dedicated presentation stuff to query 
-  results together with custom view `Component` objects. They encapsulate all the 
-  logic needed inside views so non-encapsulated-rails-helpers are not anymore 
-  needed. Better is using `Presenter`; I keep `Component` objects only for 
-  shared behaviour (like formatting currency values, rendering icons).
-
-Following the convention naming : _name what it do or render, not what it is_
-`EntriesProcessor`, `InputsCollector`, `InputsHistoryPresenter`, 
-`ReportPresenter`, `HomeIcon` (or `HomeIconComponent`)
++ Defining `Actions` classes to perform database related operations. Hence, 
+  model only contains validations and, eventually, basic scoping methods like 
+  exploring relations.. (finding budget owner..)
++ Defining `Exposers` classes to provide dedicated locals to views. These 
+  exposers extend basic data (provided by actions or not) with dedicated 
+  presenter modules. Only presentationnal stuff lives here !
++ To dry view code together with extracting logic from views, I use 
+  `Component` objects. They encapsulate all the logic needed inside views so 
+  non-encapsulated-rails-helpers are not anymore needed. Better is using 
+  `Presenter`; I keep `Component` objects only for shared behaviour (like 
+  formatting currency values, rendering icons).
++ Defining `Services` for all non database related treatment (like sending a 
+  mail or connecting to a payment platform)
 
 <h4>Separation of concerns :</h4>
-<div style="display: flex; justify-content: space-between;">
-
-<div style="border: 1px solid grey; text-orientation: upright; writing-mode: 
-vertical-lr; text-align: center;">
-MODEL
-</div>
-
-<div style="display: flex; flex-direction: column; justify-content: 
-space-evenly; background-color: #dddddd;">
-<p style="margin: auto;"><========</p>
-<p style="margin: auto; padding-inline: 1ex;">Model interface</p>
-<p style="margin: auto;">========></p>
-</div>
-
-<div style="display: flex; flex-direction: column; gap: 1ex;">
-<div style="border: 1px solid grey; text-orientation: upright; writing-mode: 
-vertical-lr; text-align: center; align-self: center; flex-grow: 1;">
-PROCESSOR
-</div>
-<div style="position: relative; border: 1px solid grey; text-orientation: upright; writing-mode: vertical-lr; text-align: center; flex-grow: 1;">
-COLLECTOR
-</div>
-</div>
-
-<div style="display: flex; flex-direction: column; justify-content: 
-space-evenly;">
-<p style="margin: auto;"><===</p>
-<p style="margin: auto;">&nbsp;</p>
-<p style="margin: auto;">===></p>
-</div>
-
-<div style="position: relative; border: 1px solid grey; text-orientation: upright; writing-mode: vertical-lr; text-align: center;">
-CONTROLLER
-<div style="position: absolute; transform: translateX( calc(-50% - 0.75em) ); top: 100%; display: flex; flex-direction: row; align-content: center; gap: 1ex; padding: 1ex;">
-<div style="writing-mode: vertical-lr; text-orientation: sideways; align-self: center;">=======></div>
-<div style="border: 1px solid grey; padding-inline: 1ex; margin-bottom: 2em; writing-mode: horizontal-tb; text-orientation: upright;">SERVICE</div>
-</div>
-</div>
-
-<div style="display: flex; flex-direction: column; justify-content: 
-space-evenly;">
-<p style="margin: auto;"><===</p>
-<p style="margin: auto;">&nbsp;</p>
-<p style="margin: auto;">===></p>
-</div>
-
-<div style="display: flex; flex-direction: column; gap: 1ex;">
-<div style="border: 1px solid grey; text-orientation: upright; writing-mode: 
-vertical-lr; text-align: center; flex-grow: 1;">
-ROUTER
-</div>
-<div style="border: 1px solid grey; text-orientation: upright; writing-mode: 
-vertical-lr; text-align: center; flex-grow: 1;">
-PRESENTER
-</div>
-</div>
-
-<div style="display: flex; flex-direction: column; justify-content: 
-space-evenly; background-color: #dddddd;">
-<p style="margin: auto;"><========</p>
-<p style="margin: auto; padding-inline: 1.5ex;">View interface</p>
-<p style="margin: auto;">========></p>
-</div>
-
-<div style="border: 1px solid grey; text-orientation: upright; writing-mode: 
-vertical-lr; text-align: center;">
-VIEW + COMPONENTS
-</div>
-</div>
-
-<div style="height: 8em;"></div>
++ Actions job is only to execute model related operations and almost all model 
+  related operation lives in an Action. Some lives in model extending 
+  capabilities of model instances..
++ Only Exposers defines the locals that view will use and they only do that.
++ Controllers only deal with routing behaviour, calling dedicated actions, 
+  services and exposers.
++ Only views and components contains html and css code.
 
 #### Final tree and ApplicationRecord extension
 ```
 app
-├── collectors
-│   └── inputs_collector.rb
+├── actions
+│   ├── budgets
+│   │   ├── create.rb
+│   │   └── update.rb
+│   ├── inputs
+│   │   ├── history.rb
+│   │   └── update.rb
+│   ├── budgets.rb
+│   └── inputs.rb
 ├── components
+│   ├── bar_graph.rb
+│   ├── component.rb
+│   ├── field_label.rb
+│   ├── flash.rb
 │   ├── icon.rb
 │   └── to_currency.rb
+├── exposers
+│   ├── budgets
+│   │   ├── exposer.rb
+│   │   ├── home.rb
+│   │   └── edit.rb
+│   ├── inputs
+│   │   ├── exposer.rb
+│   │   ├── index.rb
+│   │   └── edit.rb
 ├── lib
-│   ├── collector.rb
-│   ├── component.rb
 │   ├── context.rb
+│   ├── dry_controller.rb
+│   ├── dry_exposer
+│   │   ├── decorator.rb
+│   │   ├── exposure.rb
+│   │   └── exposures.rb
+│   ├── dry_exposer.rb
 │   ├── params_manager.rb
-│   ├── presenter.rb
-│   ├── processor.rb
+│   ├── result.rb
 │   └── session_manager.rb
 ├── presenters
-│   ├── report_presenter.rb
-├── processors
-│   └── inputs_processor.rb
-└── views
-    ├── components
-    │   └── _home_icon.html.erb
+│   ├── budget_presenter.rb
+│   ├── entry_presenter.rb
+│   ├── home_presenter.rb
+│   ├── input_presenter.rb
+│   └── report_presenter.rb
+├── services
+│   └── charge_bee_gateway.rb
 ```
 <div style="page-break-before: always;"></div>
 
-### Controllers
-##### A way to handle parameter permissions within controllers :
-```
-# app/controllers/application_controller.rb
-class ApplicationController < ActionController::Base
-  include ParamsManager
-end
-
-# app/lib/params_manager.rb
-module ParamsManager
-  protected
-  def permitted_params
-    set_model_vars
-    sanitize_decimal_values # YES, this is a controller concern !
-    params.require( @model_name ).permit( @model.permitted_attributes )
-  end
-  private
-  def set_model_vars
-    @model_name = params[:controller].singularize.to_sym
-    @model = Object.const_get( @model_name.capitalize )
-  end
-
-  def sanitize_decimal_values
-    return unless @model.respond_to? :numerical_attributes
-    @model.numerical_attributes&.each do |field|
-      params[ @model_name ]
-        .fetch( field, '' ).to_s.gsub!( ',', '.' )
-    end
-  end
-end
-
-# app/models/stay.rb
-class Stay < ApplicationRecord
-  def self.permitted_attributes
-    [ :title, :name, :whatever ]
-  end
-  def self.numerical_attributes
-    [ :price ]
-  end
-end
-```
-No more need for a `stay_params` method...
-#### Typical controller methods calling processor or collector
-```ruby
-def create
-  input = InputsProcessor.do create: Input.new( permitted_params ),
-    context: { profile: current_budget.profile }# this is good dependency injection !
-  unless input.valid?
-    @input = InputPresenter.expose input
-    render :new, status: :unprocessable_entity and return
-  end
-  redirect_to :authenticated_home
-end
-
-def index
-  @inputs = InputPresenter.expose(
-    InputsCollector.query_for :history, context: { period: current_period }
-  )
-end
-```
-
-<div style="page-break-before: always;"></div>
-
-### Base modules and classes
+## Drying tools
+### Base classes
 All this could be encapsulated inside a `Logicore` module ... or not.
-##### Context class
+#### Context class
 ```
 # A way to transform a hash to an object.. holding hash behaviour.. read-only by design.
 # Works only with symbol or string keys.
@@ -285,108 +185,269 @@ class Context
   end
 end
 ```
-##### Processor class and subclasses
+#### Result class
 ```
-class Processor
-  attr_reader :target, :context
 
-  class << self
-    def call( method = nil, **args )
-      method ||= args.keys.first
-      model_instance = args.fetch( method, nil )
-      context = args.fetch( :context, nil )
-      new( model_instance, context ).send( method )
-    end
+class Result
+  attr_reader :content
 
-    alias do call
+  def initialize( content, *args )
+    @content = args.empty? ? content : args.unshift( content )
+    @final = nil
   end
 
-  def initialize( target, context )
-    @target, @context = target, Context.new( context )
-  end
-end
-```
-```
-class InputsProcessor < Processor
-
-  def create
-    target.tap { |t| t.save && create_journal_entries }
+  def self.[]( content = true, *args )
+    new( content, *args )
   end
 
-  def update
-    target.tap { |t| t.update( context.params ) && update_journal_entries }
+  # on the fly Result creation
+  # Result.set( :Success, 'hello' )
+  # leads to a Success object subclassing Result..
+  def self.set( klass, content = true, *args )
+    set_result_class( klass )[ content, *args ]
+  end
+
+  def call( *args, **options, &block )
+    return content unless content.respond_to? :call
+    content.call( *args, **options, &block )
+  end
+
+  def method_missing( name, *args, **options, &block )
+    return super unless name.to_s =~ /^is/
+    is( name.to_s.gsub( /^is/, '' ), &block )
+  end
+
+  def is( klass, &block )
+    klass = set_result_class( klass )
+    @final ||= ( yield content if is_a? klass )
   end
 
   private
-  ...
-end
-```
-_Remark_ : `InputsProcessor.( create: ..., context: {} )` and `InputsProcessor.do create: ..., context: {}` are aliases.
 
-<div style="page-break-before: always;"></div>
-
-##### Collector class and subclasses
-```
-class Collector
-  attr_reader :context
-
-  # alias method..
-  def self.query_for( route, context: )
-    self.call( "query_for_#{route}".to_sym, context: context )
+  def to_class( name )
+    # Better not to use Rails specific code (constantize !)
+    Object.const_get( name )
   end
 
-  def self.call( method_name, context: )
-    new( context ).send( method_name )
+  def self.set_result_class( klass )
+    case klass
+    when Symbol, String
+      Object.const_defined?( klass ) ?
+        Object.const_get( klass ) :
+        Object.const_set( klass, Class.new( Result ) )
+    when self.class
+      klass
+    end
   end
 
-  def initialize( context )
-    @context = Context.new( context )
+  def set_result_class( klass )
+    self.class.set_result_class( klass )
   end
 end
+# Expected syntax
+# 1/
+# res = Result[ 'my name' ]
+# res.call -> 'my_name'
+# res.content -> [ 'my_name' ]
+# res.is( Result ) { |str| here str = 'my_name' }
+# res.isResult { |str| here str = 'my_name' }
+#
+# 2/
+# res = Result[ 'my_name', 'your_name' ]
+# res.call -> 'my_name', 'your_name'
+# res.content -> [ 'my_name', 'your_name' ]
+# res.is( Result ) { |str_a, str_b| here str_a = 'my_name', str_b = 'your_name' }
+# res.isResult { |str_a, str_b| here str_a = 'my_name', str_b = 'your_name' }
+#
+# 3/
+# res = Result[ -> ( *args, **options, &block ) { lambda code } ]
+# res.call( a, b, c: 'hello' )
+#   -> execute lambda with args = a, b ; options = c.hello
+# res.call( a, b, c: 'hello' ) { |x, y| block code }
+#   -> execute lambda with args = a, b ; options = c.hello and execute block if 
+#   lambda contains a 'yield x, y' line...
+#
+# Describing results :
+# method_yielding_a_result do |access|
+#   access.isGranted { |*content| ... }
+#   access.isDenied { |*content| ... }
+# end
+# or
+# method_yielding_a_result do |access|
+#   access.is( :Granted ) { |*content| ... }
+#   access.is( :Denied ) { |*content| ... }
+# end
 ```
+#### DryExposer module
+##### DryExposer::Base class
 ```
-class InputsCollector < Collector
+# Provide an 'expose' class method to be used in subclasses.
+# expose is the main method to be called on those classes to provide the 
+# desired locals for views.
+#
+# Many syntaxes are supported :
+#
+# 1/
+# expose :name, obj
+# --> a local named 'name' will be available in view, its content being
+# either obj or obj.call (if obj is callable)
+#
+# 2/
+# expose :name do
+#   obj
+# end
+# --> a local named 'name' will be available in view, its content being 
+# obj.call( entity, context ). This form is mandatory if the callable object 
+# is only available in instances (like while using include Deps[ 'obj' ]). 
+# And it permits to not execute the call in case of 'context' containing a 
+# key 'name' (see third syntax below) : useful on 'edit' views to manage 
+# errors (first call providing 'id' and on error call providing the result of 
+# validations...)
+#
+# 3/
+# expose :name
+# --> This suppose that 'context[:name]' exists. This syntax will 
+# provide a 'name' named local in view with content 'context.name'. Whatever 
+# syntax is used, if context contains a 'name' key, the content will be 
+# 'context.name'.
+#
+# By default, a local named 'name' will be decorated with
+# NamePresenter or (NamesPresenter if it is enumerable)
+# This name convention could be override providing a with: optionnal 
+# argument.
+# examples :
+# expose :name, with: [ :report, :entry ]
+# expose :home_content, with: [ :entries ]
+#
 
-  def query_for_new
-    Input.new( # providing defaults..
-      budget_id: context.budget_id,
-      bay_id: context.bay_id,
-      **category,
-      input_type: context.input_type,
-      time_spreading_in_months: context.time_spreading_in_months || 1
-    )
-  end
+module DryExposer
+  class Base
+    attr_reader :entity, :context
 
-  def query_for_history
-    Input
-      .eager_load( :use_category ) # avoid N+1 request
-      .where( budget_id: context.budget_id )
-      .where( "year >= ?", previous_year )
-      .where( max_id_where_statement )
-      .order(id: :desc)
-      .limit(10)
-  end
+    ###################################################
+    # Class methods
+    ###################################################
 
-  private
-  ...
-end
-```
-_Remark_ : `InputsCollector.( :query_for_history, context: {} )` and `InputsCollector.query_for :history, context: {}` are aliases.
+    class << self
+      # unique api method
+      def expose( key, *args, **options, &block )
+        exposures.add( key, content( key, *args, &block ), **options )
+      end
 
-<div style="page-break-before: always;"></div>
+      private
 
-##### Presenter class and subclasses
-```
-class Presenter
-  class << self
-    def call( collected )
-      collected.extend self::Fallback
-      collected.extend self::ThePresenter
+      def exposures
+        @exposures ||= Exposures.new
+      end
+
+      def inherited( klass )
+        exposures.each do |name, exposure|
+          klass.exposures.import( name, exposure )
+        end
+      end
+
+      def content( key, *args, &block )
+        name, other = method_name( key ), args&.shift
+
+        raw = block_given? ?
+          define_method( name, &block ).then { block } :
+          define_method( name ) { other }.then { other }
+
+        return raw unless raw.respond_to?( :call )
+        raw_content( name, raw )
+      end
+
+      def raw_content( name, raw )
+        raw.binding.receiver.then do |rec|
+          rec.new.send( name ) if rec.respond_to?( :new )
+        end
+      end
+
+      def method_name( key )
+        "_#{key}"
+      end
     end
 
-    alias expose call
-  end
+    ###################################################
+    # Instance methods
+    ###################################################
+    def call( entity, context )
+      @entity, @context = entity, context
+      exposures.inject( {} ) do |result, exposure|
+        result.merge( exposure.call( entity, context ) )
+      end
+    end
 
+    private
+
+    def exposures
+      self.class.send :exposures
+    end
+
+  end
+end
+```
+##### DryExposer::Exposures class
+```
+module DryExposer
+  class Exposures
+    attr_reader :exposures
+
+    def initialize
+      @exposures = {}
+    end
+
+    def add( key, content, **options )
+      exposures[ key ] = Exposure.new( key, content, **options )
+    end
+
+    def import( name, exposure )
+      exposures[ name ] = exposure
+    end
+
+    def each
+      exposures.each do |key, exposure|
+        yield key, exposure
+      end
+    end
+
+    def inject( starter, &block )
+      exposures.values.inject( starter, &block )
+    end
+  end
+end
+```
+##### DryExposer::Exposure class
+```
+module DryExposer
+  class Exposure
+    attr_reader :key, :raw_content, :decorator, :entity, :context
+
+    def initialize( key, raw_content, **options )
+      @key = key
+      @raw_content = raw_content
+      @decorator = Decorator.new( key, options.fetch( :with, nil ) )
+    end
+
+    def call( entity, context )
+      @entity, @context = entity, context
+      { key => decorator.call( exposed ) }
+    end
+
+    private
+
+    def exposed
+      return context[ key ] if context[ key ]
+      raw_content.respond_to?( :call ) ?
+        raw_content.call( entity, context ) : raw_content
+    end
+
+  end
+end
+```
+##### Decorator class
+```
+module DryExposer
   module Fallback
     def method_missing( name, *args )
       return super unless name.to_s =~ /^the_/
@@ -394,32 +455,64 @@ class Presenter
     end
   end
 
-  module ThePresenter
-  end
-end
-```
-```
-class ReportPresenter < Presenter
-  module ThePresenter
-    def the_title
-      title.capitalize
+  class Decorator
+    attr_reader :decorators
+
+    def initialize( key, args )
+      @decorators = case args
+                    when nil
+                      [ key.to_s, key.to_s.singularize ]
+                    when Array
+                      args
+                    else
+                      [ args.to_s, args.to_s.singularize ]
+                    end.map { |str| to_presenter( str ) }
     end
 
-    def each_way
-      all_ways.each do |way|
-        content = something_about( way )
-        yield way, AnotherPresenter.expose( content )
+    def call( item )
+      item
+        .extend( *item_decorator )
+        .tap do |it|
+          if it.respond_to?( :each )
+            mod = subitem_decorator
+            it.each { |sub_item| sub_item.extend *mod }
+          end
+        end
+    end
+
+    private
+
+    def item_decorator
+      compose_decorators( decorators.first )
+    end
+
+    def subitem_decorator
+      compose_decorators( decorators.last )
+    end
+
+    def compose_decorators( deco )
+      deco ? default_decorator << deco : default_decorator
+    end
+
+    def default_decorator
+      [ Fallback ]
+    end
+
+    def to_presenter( str )
+      begin
+        Object.const_get( "#{to_const( str )}Presenter" )
+      rescue
+        nil
       end
     end
+
+    def to_const( str )
+      str.to_s.split('_').map(&:capitalize).join
+    end
   end
 end
 ```
-_Remarque_ : `InputsPresenter.( collected )` and `InputsPresenter.expose 
-collected` are aliases.
-
-<div style="page-break-before: always;"></div>
-
-##### Component class and subclasses
+#### Component class
 ```
 class Component
   delegate :render, to: :view_context
@@ -448,7 +541,78 @@ class Component
   def partial_folder; "components/"; end
 end
 ```
-###### A typical Component
+
+### DryRails in action
+#### Action classes and subclasses
+They provide a way to encapsulate all db request.
+```
+#app/actions/inputs.rb
+module Inputs
+  class Action
+    # common stuff
+  end
+end
+
+#app/actions/inputs/create.rb
+module Inputs
+  class Create < Inputs::Action
+    def call( entity, context )
+      input = Input.create( context.params )
+      if input.valid?
+        create_journal_entries_for( input )
+        status = :Success
+      else
+        status = :Failure
+      end
+      Result.set status, input
+    end
+  end
+end
+```
+#### Exposer classes and subsclasses
+No more controller instance vars in views.
+```
+# app/exposers/entries/exposer.rb
+module Entries
+  class Exposer < DryExposer::Base
+  end
+end
+
+# app/exposers/entries/report.rb
+module Entries
+  class Report < Exposer
+    include Deps[ 'actions.entries.report_content', 'actions.entries.cat_report' ]
+
+      expose :report, with: [ :report, :entry ] do
+        report_content
+      end
+      expose( :cat_report, with: [ :report, :entry ] ) { cat_report }
+    end
+
+  end
+end
+```
+```
+module Budgets
+  class Edit < Exposer
+    include Deps[ 'actions.budgets.current' ]
+
+    expose :budget do
+      context.id ? current.call( entity, context ) : nil
+    end
+  end
+end
+```
+
+#### Presenter modules
+```
+module BudgetPresenter
+  # methods to extend budget instances..
+end
+```
+
+#### Components
+##### A typical Component
 ```
 class Icon < Component
   attr_reader :name, :options
@@ -464,7 +628,7 @@ class Icon < Component
   end
 end
 ```
-###### A non-typical Component
+##### A non-typical Component
 ```
 class ToCurrency < Component
   attr_reader :value, :default, :session
@@ -482,31 +646,34 @@ class ToCurrency < Component
   def unit; session.currency_unit; end
 end
 ```
-
-<div style="page-break-before: always;"></div>
-
-### A typical View
+#### ParamsManager module
+A way to handle parameter permissions within controllers :
 ```
-<% @index_content.each do |item| %>
-  <%= render EditIcon.new %>
-  <%= item.the_title %>
-  <%= render ToCurrency.new( item.the_value ) %>
-<% end %>
-```
+# app/lib/params_manager.rb
+module ParamsManager
+  protected
+  def permitted_params
+    set_model_vars
+    sanitize_decimal_values # YES, this is a controller concern !
+    params.require( @model_name ).permit( @model.permitted_attributes )
+  end
+  private
+  def set_model_vars
+    @model_name = params[:controller].singularize.to_sym
+    @model = Object.const_get( @model_name.capitalize )
+  end
 
-### More encapsulated or isolated stuff : Session
-Providing methods to access session content permits to treat default values or 
-on-the-way storage..
-```
-class ApplicationController < ActionController::Base
-  before_action :extend_session
-
-  def extend_session
-    session.extend SessionManager
-    session.controller = self
+  def sanitize_decimal_values
+    return unless @model.respond_to? :numerical_attributes
+    @model.numerical_attributes&.each do |field|
+      params[ @model_name ]
+        .fetch( field, '' ).to_s.gsub!( ',', '.' )
+    end
   end
 end
 ```
+#### SessionManager module
+Session code encapsulated
 ```
 module SessionManager
   attr_reader :controller
@@ -545,4 +712,116 @@ module SessionManager
     # provide default
   end
 end
+```
+#### A DryContainer to handle all this
+```
+# config/initializers/container.rb
+require "dry/system"
+
+class BudgetAppContainer < Dry::System::Container
+  def self.root_of( folder )
+    folder.identifier.key.split('.').first
+  end
+
+  configure do |config|
+    config.root = Rails.root
+
+    config.component_dirs.auto_register = proc do |folder|
+      %w( actions exposers services ).include? root_of( folder )
+    end
+
+    config.component_dirs.add 'app/' do |dir|
+      dir.namespaces.add 'actions', key: 'actions', const: nil
+      dir.namespaces.add 'exposers', key: 'exposers', const: nil
+      dir.namespaces.add 'services', key: 'services', const: nil
+    end
+
+  end
+
+  self.finalize! if Rails.env.production?
+end
+
+# config/initializers/deps.rb
+Deps = BudgetAppContainer.injector
+```
+#### DryController module
+Calling easy from within a controller.
+```
+module DryController
+  def execute( action, entity = nil, **options )
+    res = BudgetAppContainer[ action ].call( entity, Context.new( options ) )
+    block_given? ? yield( res ) : res
+  end
+
+  # short cuts...
+  def locals_for( action, entity = nil, **options, &block )
+    # dedicated to call exposers..
+    execute "exposers.#{action}", entity, **options, &block
+  end
+
+  def perform( action, entity = nil, *args, **options, &block )
+    # dedicated to call actions..
+    execute "actions.#{action}", entity, **options, &block
+  end
+end
+```
+
+<div style="page-break-before: always;"></div>
+
+### Dryed Controllers : every tool in action
+```
+# app/controllers/application_controller.rb
+class ApplicationController < ActionController::Base
+  include ParamsManager
+
+  before_action :extend_session
+
+  def extend_session
+    session.extend SessionManager
+    session.controller = self
+  end
+end
+
+# app/models/stay.rb
+class Stay < ApplicationRecord
+  def self.permitted_attributes
+    [ :title, :name, :whatever ]
+  end
+  def self.numerical_attributes
+    [ :price ]
+  end
+end
+```
+No more need for a `stay_params` method...
+
+#### Typical controller methods calling processor or collector
+```ruby
+def create
+  perform 'inputs.create', params: permitted_params do |result|
+    result.isSuccess { redirect_to :home, status: :see_other }
+
+    result.isFailure do |input|
+      locals: locals_for( 'inputs.new', input: input ) do |locals|
+        render :new, locals: locals, status: :unprocessable_entity
+      end
+    end
+  end
+end
+
+def index
+  render locals: locals_for(
+    'inputs.index',
+    current: current,
+    date: params.fetch( :date, Date.today ).to_date
+  )
+end
+```
+
+### A typical View
+```
+<% index_content.each do |item| %>
+  <%= render EditIcon.new %>
+  <%= item.the_title %>
+  <%= render ToCurrency.new( item.the_value ) %>
+<% end %>
 ```
