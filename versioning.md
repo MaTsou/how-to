@@ -64,6 +64,8 @@ are possible :
     git commit -am "Rolled back to my-desired-commit-or-tag"
     git push
     ```
+    Possibly, use `git revert`. It works well but (a priori) one commit at a 
+    time..
 
 #### Bug fix (Hotfix) : made from prod branch !
 ```
