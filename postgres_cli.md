@@ -16,3 +16,22 @@
   + `psql -d database_name -c 'SELECT * FROM tableA;'`
   + `psql -d database_name -c 'REINDEX DATABASE "database_name";'`
   + `psql -d database_name -c 'SELECT * FROM "database_name";'`
+
+#### Other command line
+Priliminary : `sudo chown postgres:postgres /var/lib/postgres`
+
++ Create a user with abilities :
+  ```
+  sudo -iu postgres
+  createuser --interactive user_name
+  superuser?y; create-db-abilily?y; create-user?n
+  ```
++ Create standard user
+  + `createuser john` if actual user has create-user ability
+  + `sudo -iu postgres psql -c 'createuser john'` if not
++ Drop user
+  + `dropuser john` if actual user has create-user ability
+  + `sudo -u postgres psql -c 'drop user john;'` if not
++ Create db
+  + `createdb -O mazu jobtickets (create database owned by mazu)
+  + `sudo -iu postgres psql -c 'create database jobtickets'
