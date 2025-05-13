@@ -99,4 +99,6 @@ docker volume ls
 docker volume rm my-volume
 docker image ls
 docker image rm my-image
+docker ps -a
+docker-compose stop
 ```
