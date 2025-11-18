@@ -1,4 +1,4 @@
-### April 2024 -- Deploy on Jelastic
+### Nov 2025 -- Deploy on Jelastic
 
 #### Nouvel environnement
 Pour déployer budgetApp, j'ai choisi un environnement nommé `budgetapp-prod-a` 
@@ -34,12 +34,18 @@ bien s'assurer de mettre à jour le bon environnement !
    token tout frais créé sur github. Bien faire attention à ne pas introduire 
    de 'typo' dans l'url : `https://github.com/MaTsou/budgetApp.git`.
 
-   > Le git token doit avoir les checkbox `repo` et `admin:repo_hook` cochées.
+   > Le git token est un fine-grained token qui n'a accès qu'au dépôt 
+   > BudgetApp. L'unique permission nécessaire est :
+   > + Content (read-only)
 
    Ce gestionnaire conserve les données du déploiement. Ainsi, si je change de 
    containeur (environnement), je peux recréer le déploiement initial depuis le 
-   gestionnaire. Les update suivants sont faits depuis le conteneur (on ne 
-   déploie qu'une fois)
+   gestionnaire. Ce déploiement execute un `git clone`, donc tout est effacé 
+   (le fichier `config/master.key` notamment) ; il faut alors relance `bundle 
+   install` et `rails assets:precompile`  (voir ci-dessous).
+
+   Les update suivants sont faits depuis le conteneur (on ne déploie qu'une 
+   fois) : à cette étape, c'est un `git pull` qui est executé.
 
    Il reste à tester comment la mise à jour d'un token peut être opérée (on 
    peut le changer dans gestionnaire de déploiement : cela suffit-il ?)
