@@ -159,7 +159,7 @@ function uss_activities() {
   if ( $the_query->have_posts() ) {
     wrap($the_query);
   } else {
-    echo esc_html_e( 'Sorry, no posts matched your criteria.' );
+    esc_html_e( 'Sorry, no posts matched your criteria.' );
   }
   // Restore original Post Data.
   wp_reset_postdata();
